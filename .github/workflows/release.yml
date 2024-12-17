@@ -1,0 +1,110 @@
+name: Release
+run-name: Release ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ inputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ONNX Runtime ${{ inputs.version }}
+        run: |
+          set -e
+          curl -L -o onnxruntime.tgz https://github.com/microsoft/onnxruntime/releases/download/v$VERSION/onnxruntime-osx-universal2-$VERSION.tgz
+          tar -xzf onnxruntime.tgz
+
+      - name: Log Requirements
+        run: |
+          otool -l onnxruntime-osx-universal2-$VERSION/lib/libonnxruntime.dylib | grep -A4 LC_BUILD_VERSION
+
+      - name: Create XCFramework
+        run: |
+          xcodebuild -create-xcframework \
+            -library onnxruntime-osx-universal2-$VERSION/lib/libonnxruntime.$VERSION.dylib \
+            -headers onnxruntime-osx-universal2-$VERSION/include \
+            -output onnxruntime.xcframework
+        
+      - name: Archive XCFramework
+        run: |
+          zip -vr onnxruntime-$VERSION-xcframework.zip onnxruntime.xcframework
+
+      - name: Generate Package Definition
+        run: |
+          cat << EOF > Package.swift
+          // swift-tools-version:5.3
+          // This file is generated. Do not edit.
+          
+          import PackageDescription
+          
+          let onnxRuntimeBinaryTarget: Target
+          #if ONNX_RUNTIME_USE_LOCAL_FRAMEWORK
+          onnxRuntimeBinaryTarget = .binaryTarget(
+              name: "ONNXRuntimeBinary",
+              path: "onnxruntime.xcframework"
+          )
+          #else
+          onnxRuntimeBinaryTarget = .binaryTarget(
+             name: "ONNXRuntimeBinary",
+             url: "https://github.com/readdle/swift-onnxruntime/releases/download/$VERSION/onnxruntime-$VERSION-xcframework.zip",
+             checksum: "$(swift package compute-checksum onnxruntime-$VERSION-xcframework.zip)"
+          )
+          #endif
+          
+          let package = Package(
+              name: "ONNXRuntime",
+              platforms: [
+                  .macOS(.v11),
+              ],
+              products: [
+                  .library(name: "CONNXRuntime", targets: ["CONNXRuntime"]),
+              ],
+              targets: [
+                  onnxRuntimeBinaryTarget,
+                  .target(
+                      name: "CONNXRuntime",
+                      dependencies: [
+                          "ONNXRuntimeBinary",
+                      ]
+                  ),
+                  .testTarget(
+                      name: "CONNXRuntimeTests",
+                      dependencies: [
+                          "CONNXRuntime",
+                      ]
+                  ),
+              ]
+          )
+          EOF
+
+      - name: Test
+        run: |
+          swift test -Xbuild-tools-swiftc -D -Xbuild-tools-swiftc ONNX_RUNTIME_USE_LOCAL_FRAMEWORK
+
+      - name: Publish Package
+        run: |
+          set -e
+          git add Package.swift
+          git config user.name 'Alexander Smarus'
+          git config user.email 'bender@readdle.com'
+          git commit -m "ONNXRuntime $VERSION"
+          git push
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $VERSION onnxruntime-$VERSION-xcframework.zip \
+            --title "ONNXRuntime v$VERSION" \
+            --notes "Source release: [microsoft/onnxruntime@v$VERSION](https://github.com/microsoft/onnxruntime/releases/tag/v$VERSION)"
