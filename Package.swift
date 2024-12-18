@@ -12,8 +12,8 @@ onnxRuntimeBinaryTarget = .binaryTarget(
 #else
 onnxRuntimeBinaryTarget = .binaryTarget(
    name: "ONNXRuntimeBinary",
-   url: "https://github.com/readdle/swift-onnxruntime/releases/download/1.19.2/onnxruntime-1.19.2-xcframework.zip",
-   checksum: "c19070eea196948ddf2750ed68cdd73efe8fad3ced1fa84a24ce738c5150e173"
+   url: "https://github.com/readdle/swift-onnxruntime/releases/download/1.20.0/onnxruntime-1.20.0-xcframework.zip",
+   checksum: "ea82d0213b45b8d750c96d43082835057508eefdcc85e0afab71a20daf4868be"
 )
 #endif
 
